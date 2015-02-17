@@ -5,29 +5,58 @@ set -e
 toplevel_directory="$(git rev-parse --show-cdup)"
 [ -n "$toplevel_directory" ] && { echo "please run from the toplevel directory"; exit 1; }
 
+red='\033[0;31m'
+green='\033[0;32m'
+blue='\033[1;34m'
+NC='\033[0m' # No Color
+
+echo "" > /tmp/git-svn-update-externals_errors.log
 
 function call()
 {
     cmd="$@"
-    echo "$cmd"
+    echo -e "${blue}$cmd${NC}"
     eval "$cmd"
     return "$?"
+}
+
+function echo_red()
+{
+    echo -e "${red}$@${NC}"
 }
 
 function do_clone()
 {
     test -d .git_externals || return 1
+    
     module=`echo $remote_url|sed 's,\(.*\)\(/trunk\|/branch.*\|/tag.*\),\1,'`
     branch=`echo $remote_url|sed 's,\(.*\)\(/trunk\|/branch.*\|/tag.*\),\2,'|sed 's,^/,,'`
     if [[ $branch = $remote_url ]]; then
         branch=""
     fi
-     (
+    
+    branchpath=$(echo $branch|cut -f1 -d/)
+    
+    (
         cd .git_externals
         if [ -d "$local_directory" ]; then
             (
                 cd "$local_directory"
-                call git svn fetch --all
+                
+                if [ "$branchpath" == "trunk" ]; then
+                    checkoutbranch="master"
+                else
+                    checkoutbranch="${branch#*/}"
+                fi
+                
+                git checkout -- .
+                call git checkout $checkoutbranch
+                if [ $? -ne 0 ]; then
+                    add_branch $remote_url $branchpath $branch 0 $module $local_directory
+                fi
+                if [[ $? -eq 0 ]]; then
+                    call git svn rebase --all
+                fi
             )
         else
             tags="tags"
@@ -35,24 +64,66 @@ function do_clone()
             branchpath=$(echo $branch|cut -f1 -d/)
             echo $tags|grep $branchpath >/dev/null 2>&1 && tags=$branchpath
             echo $brch|grep $branchpath >/dev/null 2>&1 && brch=$branchpath
-
+    
             if [ "$module" = "$remote_url" ]; then
                 # URL does not contains any trunk, branches or tags part, so we dont need
                 # additional options for git-svn
                 call git svn clone "$revision" "$module" "$local_directory"
             else
-                call git svn clone "$revision" "$module" -T trunk -b $brch -t $tags "$local_directory"
+                if [ "$branchpath" == "trunk" ]; then
+                    firstrev=$(svn log --limit 1000 "$remote_url" | grep -P ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2 | tail -n 1)
+                    call git svn clone --no-minimize-url "$revision" "$module" -T trunk -r$firstrev:HEAD "$local_directory"
+                else
+                    call git svn init --no-minimize-url "$revision" "$module" -T trunk "$local_directory"
+                    cd "$local_directory"
+                    
+                    add_branch $remote_url $branchpath $branch 1 $module $local_directory
+                fi
             fi
-
+    
         fi
-        (
-            branch="$(echo ${branch}|sed 's,/$,,')"
-            if [ -n "$branch" ]; then
-                cd "$local_directory"
-                call git reset --hard $branch
-            fi
-        )
     )
+}
+
+function add_branch()
+{
+    remote_url=$1
+    branchpath=$2
+    branch=$3
+    new_repo=$4
+    module=$5
+    local_directory=$6
+    
+    if [[ $new_repo -eq 0 ]]; then
+        current_url=$(git svn info --url)
+        if [[ ! $current_url == ${module}* ]]; then
+            echo "New branch for '${remote_url}' is not in the same repo as current branch.\\\\nPlease add it manually in .git_externals/${local_directory}/.git/config\\\\n" >> /tmp/git-svn-update-externals_errors.log
+            return 1
+        fi
+    fi
+    
+    firstrev=$(svn log --stop-on-copy  --limit 1 -r1:HEAD "$remote_url" | grep -P ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2)
+    if [ "$branchpath" == "tags" ]; then
+        basetagdir="$(echo $branch | cut -d / -f 2)"
+        tagdir="${branch#*/}" #remove characters up to first /
+        tagdir="${tagdir%/*}" #remove characters from last /
+        
+        if [ "$basetagdir" == "$tagdir" ]; then
+            call git config --add svn-remote.svn.tags tags/{$tagdir}:refs/remotes/origin/*
+            newbranch=$tagdir
+        else
+            call git config --add svn-remote.svn.tags tags/$tagdir/*:refs/remotes/origin/$tagdir/*
+            newbranch="${branch#*/}"
+        fi
+    else
+        branchdir=$(echo $branch| cut -d / -f 2)
+        call git config --add svn-remote.svn.branches branches/{$branchdir}:refs/remotes/origin/*
+        newbranch=$branchdir
+    fi
+    call git svn fetch -r$firstrev:HEAD
+    call git branch $newbranch origin/$newbranch
+    call git checkout $newbranch
+    return 0
 }
 
 function do_link()
@@ -63,7 +134,20 @@ function do_link()
         mkdir -p "$base"
         cd $base
         rel=$(git rev-parse --show-cdup)
-        ln -sf ${rel}.git_externals/"$dir"
+        
+        if [ "$(uname -s)" == "Linux" ]; then
+            ln -sf ${rel}.git_externals/"$dir"
+        else
+            #cygwin
+            if [[ -z "$rel" ]]; then
+                rel="./"
+            fi
+            
+            echo_red "${rel}$dir"
+            if [ ! -d "${rel}$dir" ] ; then
+                echo cmd /c mklink /d "`cygpath -w -a \"${rel}$dir\"`" "`cygpath -w -a \"${rel}.git_externals/$dir\"`" >> ${rel}mk_links.bat
+            fi
+        fi
     )
 }
 
@@ -95,18 +179,24 @@ function is_excluded()
     return
 }
 
+rel=$(git rev-parse --show-cdup)
+if [ -f "${rel}mk_links.bat" ] ; then
+    rm "${rel}mk_links.bat"
+fi
 
-git svn show-externals | grep -vE '#|^$' | \
-    sed 's/\(-r\)[ ]*\([0-9]\{1,\}\)/\1\2/' | \
+#check local directories
+externals=$(git svn show-externals | grep -vE '#|^$' | sed 's/\(-r\)[ ]*\([0-9]\{1,\}\)/\1\2/')
+
+echo "$externals" | \
     while read svn_externals
 do
 
     number_fields="$(echo ${svn_externals}|awk '{print NF}')"
     case $number_fields in
         2)
-            local_directory="$(echo ${svn_externals} | awk '{print $1}' | sed 's,^/,,')"
+            local_directory="$(echo ${svn_externals} | awk '{print $2}')"
             revision=""
-            remote_url="$(echo ${svn_externals} | awk '{print $2}')"
+            remote_url="$(echo ${svn_externals} | awk '{print $1}' | sed 's,^/,,')"
             ;;
         3)
             local_directory="$(echo ${svn_externals} | awk '{print $1}' | sed 's,^/,,')"
@@ -117,6 +207,50 @@ do
     esac
 
     check_excluded=$(is_excluded $local_directory)
+    
+    if [ $check_excluded -eq 0 ] ; then
+        (
+            cd .git_externals
+            if [ -d "$local_directory" ]; then
+                (
+                    cd "$local_directory"
+                    
+                    if ! git diff-index --quiet HEAD -- ; then
+                        echo_red "You have local changes in $(pwd)\n Continuing will revert them! Press Q to quit or ENTER to continue"
+                        
+                        read MY_ANSWER </dev/tty
+                        
+                        if [ ! -z "$MY_ANSWER" ]; then
+                            exit 2
+                        fi
+                    fi
+                )
+            fi
+        )
+    fi
+done
+
+#update/checkout externals
+echo "$externals" | \
+    while read svn_externals
+do
+    number_fields="$(echo ${svn_externals}|awk '{print NF}')"
+    case $number_fields in
+        2)
+            local_directory="$(echo ${svn_externals} | awk '{print $2}')"
+            revision=""
+            remote_url="$(echo ${svn_externals} | awk '{print $1}' | sed 's,^/,,')"
+            ;;
+        3)
+            local_directory="$(echo ${svn_externals} | awk '{print $1}' | sed 's,^/,,')"
+            revision=""$(echo ${svn_externals} | awk '{print $2}')
+            remote_url="$(echo ${svn_externals} | awk '{print $3}')"
+            ;;
+        *) continue ;;
+    esac
+
+    check_excluded=$(is_excluded $local_directory)
+    
     if [ $check_excluded -eq 0 ] ; then
         if [ -n "$USE_SSH" ]; then
             echo "Rewriting url to use SVN+SSH."
@@ -128,7 +262,7 @@ do
 
         export local_directory revision remote_url
 
-        echo "$local_directory -> $remote_url"
+        echo -e "${green}$local_directory -> $remote_url${NC}"
 
         dir=`dirname $local_directory`
         [ -d ".git_externals/$dir" ] || mkdir -p ".git_externals/$dir"
@@ -137,5 +271,19 @@ do
         do_link "$local_directory"
         do_excludes "$local_directory"
     fi
-
 done
+
+while read line
+do
+    echo_red $line
+done < /tmp/git-svn-update-externals_errors.log
+rm -f /tmp/git-svn-update-externals_errors.log
+
+if [ "$(uname -s)" != "Linux" ]; then
+    #cygwin
+    rel=$(git rev-parse --show-cdup)
+    
+    if [ -f "${rel}mk_links.bat" ] ; then
+        make_link.bat "`cygpath -w -a \"${rel}mk_links.bat\"`"
+    fi
+fi

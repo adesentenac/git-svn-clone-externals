@@ -1,3 +1,11 @@
+New features
+=======================
+* Script can be run on Linux or Cygwin (mklink is used for symlinks on Windows).
+* When an external points to a tag or a branch, the script will fetch that tag/branch and the trunk up to the branching revision. When an external points to a trunk, the script will fetch the last 1000 revisions.
+* When re-running the script, it will update the external: if the external points to the same branch it will fetch it, if the externals points to a new branch it will add it (an external pointing to a new repository is not supported)
+* Tags that have a folder structure are supported (for example if an external points to <repo>/tags/x/y/z, it will consider that as a tag, and not subfolders in a 'x' tag).
+* A bit of color :)
+
 git-svn-clone-externals
 =======================
 
