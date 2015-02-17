@@ -2,6 +2,19 @@
 
 set -e
 
+username=$1
+password=$2
+
+useroption=""
+
+if [[ -z "$username" ]]; then
+    useroption=""
+else
+    useroption="--username $username"
+fi
+
+export useroption password
+
 toplevel_directory="$(git rev-parse --show-cdup)"
 [ -n "$toplevel_directory" ] && { echo "please run from the toplevel directory"; exit 1; }
 
@@ -11,6 +24,14 @@ blue='\033[1;34m'
 NC='\033[0m' # No Color
 
 echo "" > /tmp/git-svn-update-externals_errors.log
+
+function call_pwd()
+{
+    cmd="$@"
+    echo -e "${blue}$cmd${NC}"
+    eval "echo \"$password\" | $cmd"
+    return "$?"
+}
 
 function call()
 {
@@ -68,13 +89,13 @@ function do_clone()
             if [ "$module" = "$remote_url" ]; then
                 # URL does not contains any trunk, branches or tags part, so we dont need
                 # additional options for git-svn
-                call git svn clone "$revision" "$module" "$local_directory"
+                call_pwd git svn clone "$useroption" "$revision" "$module" "$local_directory"
             else
                 if [ "$branchpath" == "trunk" ]; then
                     firstrev=$(svn log --limit 1000 "$remote_url" | grep -P ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2 | tail -n 1)
-                    call git svn clone --no-minimize-url "$revision" "$module" -T trunk -r$firstrev:HEAD "$local_directory"
+                    call_pwd git svn clone "$useroption" --no-minimize-url "$revision" "$module" -T trunk -r$firstrev:HEAD "$local_directory"
                 else
-                    call git svn init --no-minimize-url "$revision" "$module" -T trunk "$local_directory"
+                    call_pwd git svn init "$useroption" --no-minimize-url "$revision" "$module" -T trunk "$local_directory"
                     cd "$local_directory"
                     
                     add_branch $remote_url $branchpath $branch 1 $module $local_directory
@@ -102,16 +123,15 @@ function add_branch()
         fi
     fi
     
-    firstrev=$(svn log --stop-on-copy  --limit 1 -r1:HEAD "$remote_url" | grep -P ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2)
     if [ "$branchpath" == "tags" ]; then
         basetagdir="$(echo $branch | cut -d / -f 2)"
         tagdir="${branch#*/}" #remove characters up to first /
-        tagdir="${tagdir%/*}" #remove characters from last /
         
-        if [ "$basetagdir" == "$tagdir" ]; then
+        if [ "$tagdir" == "${tagdir%/*}" ]; then
             call git config --add svn-remote.svn.tags tags/{$tagdir}:refs/remotes/origin/*
             newbranch=$tagdir
         else
+            tagdir="${tagdir%/*}" #remove characters from last /
             call git config --add svn-remote.svn.tags tags/$tagdir/*:refs/remotes/origin/$tagdir/*
             newbranch="${branch#*/}"
         fi
@@ -120,7 +140,15 @@ function add_branch()
         call git config --add svn-remote.svn.branches branches/{$branchdir}:refs/remotes/origin/*
         newbranch=$branchdir
     fi
-    call git svn fetch -r$firstrev:HEAD
+    
+    branchrev=$(svn log --stop-on-copy --limit 1 -r1:HEAD "$remote_url" | grep -P ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2)
+    firstrev=$(svn log --limit 1 -r${branchrev}:1 "${module}/trunk" | grep -P ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2) #first revision before branching on trunk
+    
+    if [[ -z "$firstrev" ]]; then
+        firstrev=$branchrev
+    fi
+    
+    call_pwd git svn fetch -r$firstrev:HEAD
     call git branch $newbranch origin/$newbranch
     call git checkout $newbranch
     return 0
@@ -210,10 +238,9 @@ do
     
     if [ $check_excluded -eq 0 ] ; then
         (
-            cd .git_externals
-            if [ -d "$local_directory" ]; then
+            if [ -d ".git_externals/$local_directory" ]; then
                 (
-                    cd "$local_directory"
+                    cd ".git_externals/$local_directory"
                     
                     if ! git diff-index --quiet HEAD -- ; then
                         echo_red "You have local changes in $(pwd)\n Continuing will revert them! Press Q to quit or ENTER to continue"
