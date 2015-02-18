@@ -311,6 +311,6 @@ if [ "$(uname -s)" != "Linux" ]; then
     rel=$(git rev-parse --show-cdup)
     
     if [ -f "${rel}mk_links.bat" ] ; then
-        make_link.bat "`cygpath -w -a \"${rel}mk_links.bat\"`"
+        run_as_admin.bat "`cygpath -w -a \"${rel}mk_links.bat\"`"
     fi
 fi
