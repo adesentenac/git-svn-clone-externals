@@ -76,7 +76,7 @@ function do_clone()
                     add_branch $remote_url $branchpath $branch 0 $module $local_directory
                 fi
                 if [[ $? -eq 0 ]]; then
-                    call git svn rebase --all
+                    call_pwd git svn rebase --all
                 fi
             )
         else
@@ -171,7 +171,6 @@ function do_link()
                 rel="./"
             fi
             
-            echo_red "${rel}$dir"
             if [ ! -d "${rel}$dir" ] ; then
                 echo cmd /c mklink /d "`cygpath -w -a \"${rel}$dir\"`" "`cygpath -w -a \"${rel}.git_externals/$dir\"`" >> ${rel}mk_links.bat
             fi
