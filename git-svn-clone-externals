@@ -48,8 +48,6 @@ function echo_red()
 
 function do_clone()
 {
-    test -d .git_externals || return 1
-    
     module=`echo $remote_url|sed 's,\(.*\)\(/trunk\|/branch.*\|/tag.*\),\1,'`
     branch=`echo $remote_url|sed 's,\(.*\)\(/trunk\|/branch.*\|/tag.*\),\2,'|sed 's,^/,,'`
     if [[ $branch = $remote_url ]]; then
@@ -59,7 +57,6 @@ function do_clone()
     branchpath=$(echo $branch|cut -f1 -d/)
     
     (
-        cd .git_externals
         if [ -d "$local_directory" ]; then
             (
                 cd "$local_directory"
@@ -118,7 +115,7 @@ function add_branch()
     if [[ $new_repo -eq 0 ]]; then
         current_url=$(git svn info --url)
         if [[ ! $current_url == ${module}* ]]; then
-            echo "New branch for '${remote_url}' is not in the same repo as current branch.\\\\nPlease add it manually in .git_externals/${local_directory}/.git/config\\\\n" >> /tmp/git-svn-update-externals_errors.log
+            echo "New branch for '${remote_url}' is not in the same repo as current branch.\\\\nPlease add it manually in ${local_directory}/.git/config\\\\n" >> /tmp/git-svn-update-externals_errors.log
             return 1
         fi
     fi
@@ -159,20 +156,20 @@ function do_link()
     dir="$1"
     base="$(dirname $dir)"
     (
-        mkdir -p "$base"
-        cd $base
+        mkdir -p ".git_externals/$base"
+        cd ".git_externals/$base"
         rel=$(git rev-parse --show-cdup)
         
         if [ "$(uname -s)" == "Linux" ]; then
-            ln -sf ${rel}.git_externals/"$dir"
+            ln -sf ${rel}"$dir"
         else
             #cygwin
             if [[ -z "$rel" ]]; then
                 rel="./"
             fi
             
-            if [ ! -d "${rel}$dir" ] ; then
-                echo cmd /c mklink /d "`cygpath -w -a \"${rel}$dir\"`" "`cygpath -w -a \"${rel}.git_externals/$dir\"`" >> ${rel}mk_links.bat
+            if [ ! -d "${rel}.git_externals/$dir" ] ; then
+                echo cmd /c mklink /d "`cygpath -w -a \"${rel}.git_externals/$dir\"`" "`cygpath -w -a \"${rel}$dir\"`" >> ${rel}mk_links.bat
             fi
         fi
     )
@@ -237,9 +234,9 @@ do
     
     if [ $check_excluded -eq 0 ] ; then
         (
-            if [ -d ".git_externals/$local_directory" ]; then
+            if [ -d "$local_directory" ]; then
                 (
-                    cd ".git_externals/$local_directory"
+                    cd "$local_directory"
                     
                     if ! git diff-index --quiet HEAD -- ; then
                         echo_red "You have local changes in $(pwd)\n Continuing will revert them! Press Q to quit or ENTER to continue"
@@ -291,7 +288,7 @@ do
         echo -e "${green}$local_directory -> $remote_url${NC}"
 
         dir=`dirname $local_directory`
-        [ -d ".git_externals/$dir" ] || mkdir -p ".git_externals/$dir"
+        [ -d "$dir" ] || mkdir -p "$dir"
 
         do_clone "$revision" "$remote_url" "$local_directory" || exit
         do_link "$local_directory"
@@ -310,6 +307,7 @@ if [ "$(uname -s)" != "Linux" ]; then
     rel=$(git rev-parse --show-cdup)
     
     if [ -f "${rel}mk_links.bat" ] ; then
+        echo run_as_admin.bat "`cygpath -w -a \"${rel}mk_links.bat\"`"
         run_as_admin.bat "`cygpath -w -a \"${rel}mk_links.bat\"`"
     fi
 fi
