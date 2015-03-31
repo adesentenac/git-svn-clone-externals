@@ -9,11 +9,15 @@ ECHO =============================
 ECHO Running Admin shell
 ECHO =============================
 
+echo p1: %1
+echo p2: %2
+
+set admin_command=%1
 :checkPrivileges 
 NET FILE 1>NUL 2>NUL
 if '%errorlevel%' == '0' ( goto gotPrivileges ) else ( goto getPrivileges ) 
-
 :getPrivileges 
+set admin_command=%2
 if '%1'=='ELEV' (shift & goto gotPrivileges)  
 ECHO. 
 ECHO **************************************
@@ -35,6 +39,6 @@ exit /B
 setlocal & pushd .
 
 REM Run as admin
-echo cmd /c %2
-cmd /c %2
+echo cmd /c %admin_command%
+cmd /c %admin_command%
 pause
