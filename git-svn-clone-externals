@@ -21,6 +21,7 @@ toplevel_directory="$(git rev-parse --show-cdup)"
 red='\033[0;31m'
 green='\033[0;32m'
 blue='\033[1;34m'
+yellow='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo "" > /tmp/git-svn-update-externals_errors.log
@@ -44,6 +45,28 @@ function call()
 function echo_red()
 {
     echo -e "${red}$@${NC}"
+}
+
+function cygpath()
+{
+  if [ "$(expr substr $(uname -s) 1 6)" == "CYGWIN" ]; then
+    echo "`cygpath -w -a \"$1\"`"
+  elif [ "$(expr substr $(uname -s) 1 7)" == "MINGW32" ]; then
+    echo "`$CYGWIN_HOME/bin/cygpath -w -a \"$1\"`"
+  else
+    echo ""
+  fi
+}
+
+function cygstart()
+{
+  if [ "$(expr substr $(uname -s) 1 6)" == "CYGWIN" ]; then
+    cygstart $@
+  elif [ "$(expr substr $(uname -s) 1 7)" == "MINGW32" ]; then
+    $CYGWIN_HOME/bin/cygstart $@
+  else
+    $@
+  fi
 }
 
 function do_clone()
@@ -163,13 +186,15 @@ function do_link()
         if [ "$(uname -s)" == "Linux" ]; then
             ln -sf ${rel}"$dir"
         else
-            #cygwin
+            #windows
             if [[ -z "$rel" ]]; then
                 rel="./"
             fi
             
             if [ ! -d "${rel}.git_externals/$dir" ] ; then
-                echo cmd /c mklink /d "`cygpath -w -a \"${rel}.git_externals/$dir\"`" "`cygpath -w -a \"${rel}$dir\"`" >> ${rel}mk_links.bat
+                target=$(cygpath ${rel}.git_externals/$dir)
+                src=$(cygpath ${rel}$dir)
+                echo cmd /c mklink /d $target $src >> ${rel}mk_links.bat
             fi
         fi
     )
@@ -210,9 +235,8 @@ fi
 
 #check local directories
 externals=$(git svn show-externals | grep -vE '#|^$' | sed 's/\(-r\)[ ]*\([0-9]\{1,\}\)/\1\2/')
-
-echo "$externals" | \
-    while read svn_externals
+localchanges=0
+while read svn_externals
 do
 
     number_fields="$(echo ${svn_externals}|awk '{print NF}')"
@@ -233,25 +257,30 @@ do
     check_excluded=$(is_excluded $local_directory)
     
     if [ $check_excluded -eq 0 ] ; then
-        (
-            if [ -d "$local_directory" ]; then
-                (
-                    cd "$local_directory"
-                    
-                    if ! git diff-index --quiet HEAD -- ; then
-                        echo_red "You have local changes in $(pwd)\n Continuing will revert them! Press Q to quit or ENTER to continue"
-                        
-                        read MY_ANSWER </dev/tty
-                        
-                        if [ ! -z "$MY_ANSWER" ]; then
-                            exit 2
-                        fi
-                    fi
-                )
-            fi
+      if [ -d "$local_directory" ]; then
+        output=$(
+          cd "$local_directory"
+          
+          if ! git diff-index --quiet HEAD -- ; then
+            echo "You have local changes in $(pwd)"
+          fi
         )
+        if [ "$output" != "" ]; then
+          echo_red $output
+          localchanges=1
+        fi
+      fi
     fi
-done
+done <<<"$externals"
+
+if [ $localchanges -eq 1 ]; then
+  echo -e "${yellow}Continuing will revert them! Press Q to quit or ENTER to continue.${NC}"
+  read MY_ANSWER </dev/tty
+
+  if [ ! -z "$MY_ANSWER" ]; then
+      exit 2
+  fi
+fi
 
 #update/checkout externals
 echo "$externals" | \
@@ -303,11 +332,12 @@ done < /tmp/git-svn-update-externals_errors.log
 rm -f /tmp/git-svn-update-externals_errors.log
 
 if [ "$(uname -s)" != "Linux" ]; then
-    #cygwin
+    #windows
     rel=$(git rev-parse --show-cdup)
     
     if [ -f "${rel}mk_links.bat" ] ; then
-        echo run_as_admin.bat "`cygpath -w -a \"${rel}mk_links.bat\"`"
-        run_as_admin.bat "`cygpath -w -a \"${rel}mk_links.bat\"`"
+        command=$(cygpath ${rel}mk_links.bat)
+        echo run_as_admin.bat $command
+        cygstart run_as_admin.bat $command
     fi
 fi
