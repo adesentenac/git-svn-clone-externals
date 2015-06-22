@@ -1,6 +1,81 @@
 #!/bin/bash
-
 set -e
+
+function usage()
+{
+    echo "$0"
+    echo "--username <username>\tProvides the SVN username"
+    echo "--password <password>\tProvides the SVN password"
+    echo "--ask_password\tPrompts for the SVN password"
+}
+
+function echo_red()
+{
+    echo -e "${red}$@${NC}"
+}
+
+function call_pwd()
+{
+    cmd="$@"
+    echo -e "${blue}$cmd${NC}"
+    eval "echo \"$password\" | $cmd"
+    return "$?"
+}
+
+function call()
+{
+    cmd="$@"
+    echo -e "${blue}$cmd${NC}"
+    eval "$cmd"
+    return "$?"
+}
+
+function cygpath()
+{
+  if [ "$(expr substr $(uname -s) 1 6)" == "CYGWIN" ]; then
+    echo "`cygpath -w -a \"$1\"`"
+  elif [ "$(expr substr $(uname -s) 1 7)" == "MINGW32" ]; then
+    echo "`$CYGWIN_HOME/bin/cygpath -w -a \"$1\"`"
+  else
+    echo ""
+  fi
+}
+
+function cygstart()
+{
+  if [ "$(expr substr $(uname -s) 1 6)" == "CYGWIN" ]; then
+    cygstart $@
+  elif [ "$(expr substr $(uname -s) 1 7)" == "MINGW32" ]; then
+    $CYGWIN_HOME/bin/cygstart $@
+  else
+    $@
+  fi
+}
+
+while [[ $# > 0 ]]
+do
+key="$1"
+
+case $key in
+    -u|--username)
+    username="$2"
+    shift # past argument
+    ;;
+    -p|--password)
+    password="$2"
+    shift # past argument
+    ;;
+    -a|--ask_password)
+    read -s -p Password: password
+    ;;
+    *)
+      echo_red "Unknown option: $key"
+      usage
+      exit 1
+    ;;
+esac
+shift # past argument or value
+done
 
 username=$1
 password=$2
@@ -25,49 +100,6 @@ yellow='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo "" > /tmp/git-svn-update-externals_errors.log
-
-function call_pwd()
-{
-    cmd="$@"
-    echo -e "${blue}$cmd${NC}"
-    eval "echo \"$password\" | $cmd"
-    return "$?"
-}
-
-function call()
-{
-    cmd="$@"
-    echo -e "${blue}$cmd${NC}"
-    eval "$cmd"
-    return "$?"
-}
-
-function echo_red()
-{
-    echo -e "${red}$@${NC}"
-}
-
-function cygpath()
-{
-  if [ "$(expr substr $(uname -s) 1 6)" == "CYGWIN" ]; then
-    echo "`cygpath -w -a \"$1\"`"
-  elif [ "$(expr substr $(uname -s) 1 7)" == "MINGW32" ]; then
-    echo "`$CYGWIN_HOME/bin/cygpath -w -a \"$1\"`"
-  else
-    echo ""
-  fi
-}
-
-function cygstart()
-{
-  if [ "$(expr substr $(uname -s) 1 6)" == "CYGWIN" ]; then
-    cygstart $@
-  elif [ "$(expr substr $(uname -s) 1 7)" == "MINGW32" ]; then
-    $CYGWIN_HOME/bin/cygstart $@
-  else
-    $@
-  fi
-}
 
 function do_clone()
 {
