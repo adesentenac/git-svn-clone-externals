@@ -306,12 +306,20 @@ do
 done <<<"$externals"
 
 if [ $localchanges -eq 1 ]; then
-  echo -e "${yellow}Continuing will revert them! Press Q to quit or ENTER to continue.${NC}"
+  echo -e "${yellow}Continuing will revert them!\nDo you want to continue (Y/N)?${NC}"
   read MY_ANSWER </dev/tty
-
-  if [ ! -z "$MY_ANSWER" ]; then
+  valid_answer=0
+  while [ $valid_answer -eq 0 ]
+  do
+    if [ "$MY_ANSWER" = "Y" ]; then
+      valid_answer=1
+    elif [ "$MY_ANSWER" = "N" ]; then
       exit 2
-  fi
+    else
+      echo -e "${yellow}Invalid answer!\nDo you want to continue (Y/N)?${NC}"
+      read MY_ANSWER </dev/tty
+    fi
+  done
 fi
 
 #update/checkout externals
