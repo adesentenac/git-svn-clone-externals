@@ -4,10 +4,17 @@ set -e
 function usage()
 {
     echo "$0"
-    echo "--username <username>\tProvides the SVN username"
-    echo "--password <password>\tProvides the SVN password"
-    echo "--ask_password\tPrompts for the SVN password"
+    echo -e " --username <username>\tProvides the SVN username"
+    echo -e " --password <password>\tProvides the SVN password"
+    echo -e " --ask-password\t\tPrompts for the SVN password"
 }
+
+red='\033[0;31m'
+green='\033[0;32m'
+blue='\033[1;34m'
+cyan='\033[1;36m'
+yellow='\033[1;33m'
+NC='\033[0m' # No Color
 
 function echo_red()
 {
@@ -65,7 +72,7 @@ case $key in
     password="$2"
     shift # past argument
     ;;
-    -a|--ask_password)
+    -a|--ask-password)
     read -s -p Password: password
     ;;
     *)
@@ -76,9 +83,6 @@ case $key in
 esac
 shift # past argument or value
 done
-
-username=$1
-password=$2
 
 useroption=""
 
@@ -92,12 +96,6 @@ export useroption password
 
 toplevel_directory="$(git rev-parse --show-cdup)"
 [ -n "$toplevel_directory" ] && { echo "please run from the toplevel directory"; exit 1; }
-
-red='\033[0;31m'
-green='\033[0;32m'
-blue='\033[1;34m'
-yellow='\033[1;33m'
-NC='\033[0m' # No Color
 
 echo "" > /tmp/git-svn-update-externals_errors.log
 
@@ -128,7 +126,7 @@ function do_clone()
                     add_branch $remote_url $branchpath $branch 0 $module $local_directory
                 fi
                 if [[ $? -eq 0 ]]; then
-                    call_pwd git svn rebase --all
+                    call_pwd git svn rebase --all "$useroption"
                 fi
             )
         else
@@ -200,7 +198,7 @@ function add_branch()
         firstrev=$branchrev
     fi
     
-    call_pwd git svn fetch -r$firstrev:HEAD
+    call_pwd git svn fetch -r$firstrev:HEAD "$useroption"
     call git branch $newbranch origin/$newbranch
     call git checkout $newbranch
     return 0
