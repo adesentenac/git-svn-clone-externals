@@ -107,6 +107,8 @@ function do_clone()
         branch=""
     fi
     
+    branch="${branch%/}" # remove trailing /
+	
     branchpath=$(echo $branch|cut -f1 -d/)
     
     (
@@ -142,7 +144,7 @@ function do_clone()
                 call_pwd git svn clone "$useroption" "$revision" "$module" "$local_directory"
             else
                 if [ "$branchpath" == "trunk" ]; then
-                    firstrev=$(svn log --limit 1000 "$remote_url" | grep -P ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2 | tail -n 1)
+                    firstrev=$(svn log --limit 1000 "$remote_url" | grep -E ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2 | tail -n 1)
                     call_pwd git svn clone "$useroption" --no-minimize-url "$revision" "$module" -T trunk -r$firstrev:HEAD "$local_directory"
                 else
                     call_pwd git svn init "$useroption" --no-minimize-url "$revision" "$module" -T trunk "$local_directory"
@@ -178,11 +180,11 @@ function add_branch()
         tagdir="${branch#*/}" #remove characters up to first /
         
         if [ "$tagdir" == "${tagdir%/*}" ]; then
-            call git config --add svn-remote.svn.tags tags/{$tagdir}:refs/remotes/origin/*
+            call git config --add svn-remote.svn.branches tags/{$tagdir}:refs/remotes/origin/*
             newbranch=$tagdir
         else
             tagdir="${tagdir%/*}" #remove characters from last /
-            call git config --add svn-remote.svn.tags tags/$tagdir/*:refs/remotes/origin/$tagdir/*
+            call git config --add svn-remote.svn.branches tags/$tagdir/*:refs/remotes/origin/$tagdir/*
             newbranch="${branch#*/}"
         fi
     else
@@ -191,13 +193,13 @@ function add_branch()
         newbranch=$branchdir
     fi
     
-    branchrev=$(svn log --stop-on-copy --limit 1 -r1:HEAD "$remote_url" | grep -P ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2)
-    firstrev=$(svn log --limit 1 -r${branchrev}:1 "${module}/trunk" | grep -P ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2) #first revision before branching on trunk
+    branchrev=$(svn log --stop-on-copy --limit 1 -r1:HEAD "$remote_url" | grep -E ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2)
+    firstrev=$(svn log --limit 1 -r${branchrev}:1 "${module}/trunk" | grep -E ^r[0-9]+ | cut -d \  -f 1 | cut -d r -f 2) #first revision before branching on trunk
     
     if [[ -z "$firstrev" ]]; then
         firstrev=$branchrev
     fi
-    
+	
     call_pwd git svn fetch -r$firstrev:HEAD "$useroption"
     call git branch $newbranch origin/$newbranch
     call git checkout $newbranch
