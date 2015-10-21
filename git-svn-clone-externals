@@ -378,6 +378,6 @@ if [ "$(uname -s)" != "Linux" ]; then
     if [ -f "${rel}mk_links.bat" ] ; then
         command=$(cygpath ${rel}mk_links.bat)
         echo run_as_admin.bat $command
-        cygstart run_as_admin.bat $command
+        cygstart "run_as_admin.bat $command && rm $command"
     fi
 fi
